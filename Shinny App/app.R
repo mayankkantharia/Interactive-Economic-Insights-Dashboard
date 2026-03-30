@@ -1,0 +1,358 @@
+library(shiny)
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(countrycode)
+library(bslib)
+library(viridis)
+
+df       <- readRDS("data_prepped.rds")
+world_sf <- readRDS("world_simp.rds")
+
+pal_inf  <- colorNumeric(viridis(256, option = "cividis"),
+                         domain = df$Inflation,  na.color = "transparent")
+pal_food <- colorNumeric(viridis(256, option = "cividis"),
+                         domain = df$FoodShare, na.color = "transparent")
+
+ui <- navbarPage(
+  title = "Global Inflation & Food Expenditure Explorer",
+  windowTitle = "Inflation & Food Expenditure Explorer",
+  theme = bslib::bs_theme(bootswatch = "flatly", version = 5),
+  header = tags$head(
+    tags$style(HTML("
+      .navbar-brand { font-weight: bold; }
+      .info-box { background-color: #f8f9fa; border-left: 4px solid #6c757d; 
+        padding: 10px; margin-bottom: 15px; }
+      .metric-title { font-size: 1.2em; font-weight: bold; }
+      .metric-value { font-size: 1.5em; font-weight: bold; color: #2c3e50; }
+      .leaflet-container { border-radius: 5px; }
+      .trend-stats { font-size: 0.85rem; }
+      .trend-stats h5 { font-size: 1rem; margin-bottom: 0.25em; }
+      .trend-stats .metric-title { font-size: 0.9rem; }
+      .trend-stats .metric-value { font-size: 1.1rem; }
+      .map-title { text-align: center; font-size: 1.3em; font-weight: bold;
+        margin-bottom: 10px; }     
+    "))
+  ),
+  
+  tabPanel(
+    "Global Map",
+    div(class = "plot-container",
+        sidebarLayout(
+          sidebarPanel(
+            width = 4,
+            h4("Map Controls", style = "margin-top: 0;"),
+            radioButtons(
+              "metric",
+              tags$span(class = "metric-title", "Choose Metric:"),
+              choices = c(
+                "Food Spend Share" = "FoodShare",
+                "Inflation" = "Inflation"
+              ),
+              selected = "FoodShare"
+            ),
+            sliderInput(
+              "mapYear",
+              "Year:",
+              min = min(df$Year),
+              max = max(df$Year),
+              value = max(df$Year),
+              sep = "",
+            ),
+            hr(),
+            div(class = "about-box",
+                h5("About this Map"),
+                p("Explore global patterns of inflation and food expenditure. Toggle metric & year to explore global patterns. Hover over countries to see exact values."),
+                hr(),
+                p(HTML(
+                  'Data Source: <a href="https://ourworldindata.org/grapher/consumer-price-index" target="_blank">Consumer Price Index</a>, 
+                <a href="https://ourworldindata.org/grapher/share-of-consumer-expenditure-spent-on-food" target="_blank">Food Spend Share</a>'
+                ))
+            ),
+          ),
+          mainPanel(
+            width = 8,
+            tags$h2(
+              "Mapping Inflation and Food-Budget Stress Globally",
+              class = "map-title"
+            ),
+            leafletOutput("map", height = "550px")
+          )
+        )
+    )
+  ),
+  
+  tabPanel(
+    "Country Trends",
+    div(class = "plot-container",
+        sidebarLayout(
+          sidebarPanel(
+            width = 4,
+            h4("Trend Controls", style = "margin-top: 0;"),
+            selectizeInput(
+              "selCountries", 
+              "Select Countries:",
+              choices = sort(unique(df$Country)),
+              selected = c("United States", "India", "Australia"),
+              multiple = TRUE,
+              options = list(maxItems = 5)
+            ),
+            sliderInput(
+              "yrRange", 
+              "Year Range:",
+              min = min(df$Year),
+              max = max(df$Year),
+              value = c(min(df$Year), max(df$Year)),
+              sep = "",
+            ),
+            hr(),
+            uiOutput("trendStats"),
+            hr(),
+          ),
+          mainPanel(
+            width = 8,
+            plotOutput("trendPlot", height = "600px")
+          )
+        )
+    )
+  ),
+  
+  tabPanel(
+    "Country Profile",
+    div(class = "plot-container",
+        sidebarLayout(
+          sidebarPanel(
+            width = 4,
+            h4("Country Selection", style = "margin-top: 0;"),
+            selectizeInput(
+              "compareCountry", 
+              "Choose Country:", 
+              choices = sort(unique(df$Country)),
+              selected = "Australia",
+            ),
+            hr(),
+            uiOutput("countryStats"),
+          ),
+          mainPanel(
+            width = 8,
+            plotOutput("comparePlot", height = "600px")
+          )
+        )
+    )
+  ),
+)
+
+server <- function(input, output, session) {
+  
+  year_data <- reactive({
+    df %>% filter(Year == input$mapYear)
+  })
+  
+  output$map <- renderLeaflet({
+    leaflet(world_sf) %>%
+      addProviderTiles("CartoDB.Voyager") %>%
+      addPolygons(layerId = ~iso_a3,
+                  fillOpacity = 0.8, weight = 0.3, color = "white")
+  })
+  
+  observe({
+    mdf <- year_data()
+    pal <- if (input$metric == "Inflation") pal_inf else pal_food
+    
+    map_df <- world_sf %>%
+      left_join(mdf, by = c("iso_a3" = "iso3"))
+    
+    leafletProxy("map", data = map_df) %>%
+      clearShapes() %>%
+      addPolygons(fillColor   = ~pal(get(input$metric)),
+                  fillOpacity = 0.8,
+                  weight      = 0.3,
+                  color       = "white",
+                  layerId     = ~iso_a3,
+                  label       = ~ifelse(
+                    is.na(get(input$metric)),
+                    paste0(name, ": No data"),
+                    sprintf("%s: %.1f%%", name, get(input$metric))
+                  )) %>%
+      clearControls() %>%
+      addLegend(position  = "bottomright",
+                pal       = pal,
+                values    = ~get(input$metric),
+                title     = if (input$metric == "Inflation")
+                  paste0("Inflation (%) — ", input$mapYear)
+                else
+                  paste0("Food share (%) — ", input$mapYear),
+                labFormat = labelFormat(suffix = "%"),
+                opacity   = 1)
+  })
+  
+  output$trendStats <- renderUI({
+    req(input$selCountries, input$yrRange)
+    
+    stats_df <- df %>%
+      filter(
+        Country %in% input$selCountries,
+        Year    >= input$yrRange[1],
+        Year    <= input$yrRange[2]
+      )
+    if (nrow(stats_df)==0) {
+      return(div("No data in that range."))
+    }
+    
+    avg_food <- mean(stats_df$FoodShare, na.rm = TRUE)
+    min_food_row <- stats_df %>% slice_min(FoodShare, with_ties = FALSE)
+    max_food_row <- stats_df %>% slice_max(FoodShare, with_ties = FALSE)
+    
+    avg_inf  <- mean(stats_df$Inflation, na.rm = TRUE)
+    min_inf_row <- stats_df %>% slice_min(Inflation, with_ties = FALSE)
+    max_inf_row <- stats_df %>% slice_max(Inflation, with_ties = FALSE)
+    
+    div(class = "info-box trend-stats",
+        h5("Food‐Share Stats"),
+        div(span(class="metric-title", "Average Food Share:"), 
+            span(class="metric-value", sprintf("%.2f%%", avg_food))),
+        div(span(class="metric-title", "Min Food Share:"), 
+            span(class="metric-value", sprintf("%.2f%% (%s, %d)",
+                                               min_food_row$FoodShare, min_food_row$Country, min_food_row$Year))),
+        div(span(class="metric-title", "Max Food Share:"), 
+            span(class="metric-value", sprintf("%.2f%% (%s, %d)",
+                                               max_food_row$FoodShare, max_food_row$Country, max_food_row$Year))),
+        hr(),
+        h5("Inflation Stats"),
+        div(span(class="metric-title", "Average Inflation:"), 
+            span(class="metric-value", sprintf("%.2f%%", avg_inf))),
+        div(span(class="metric-title", "Min Inflation:"), 
+            span(class="metric-value", sprintf("%.2f%% (%s, %d)",
+                                               min_inf_row$Inflation, min_inf_row$Country, min_inf_row$Year))),
+        div(span(class="metric-title", "Max Inflation:"), 
+            span(class="metric-value", sprintf("%.2f%% (%s, %d)",
+                                               max_inf_row$Inflation, max_inf_row$Country, max_inf_row$Year))),
+    )
+    
+  })
+  
+  output$trendPlot <- renderPlot({
+    req(input$selCountries)
+    df %>%
+      filter(
+        Country %in% input$selCountries,
+        Year >= input$yrRange[1],
+        Year <= input$yrRange[2]
+      ) %>%
+      select(Country, Year, Inflation, FoodShare) %>%
+      pivot_longer(
+        cols = c(Inflation, FoodShare),
+        names_to = "Metric",
+        values_to = "Value"
+      ) %>%
+      ggplot(aes(x = Year, y = Value, color = Country)) +
+      geom_line(size = 1.2) +
+      facet_wrap(
+        ~ Metric,
+        scales = "free_y",
+        ncol = 1,
+        labeller = as_labeller(c(
+          Inflation = "Annual Inflation (%)",
+          FoodShare = "Food spend % of budget"
+        ))
+      ) +
+      scale_color_viridis_d() +
+      labs(
+        title = "Inflation vs Food Budget Share for Selected Countries",
+        x = NULL,
+        color = ""
+      ) +
+      theme_minimal(base_size = 14) +
+      theme(
+        legend.position = "bottom",
+        plot.title = element_text(face = "bold", size = 16),
+        strip.text = element_text(face = "bold", size = 12)
+      )
+  })
+  
+  output$countryStats <- renderUI({
+    req(input$compareCountry)
+    
+    country_data <- df %>%
+      filter(Country == input$compareCountry)
+    
+    if(nrow(country_data) > 0) {
+      stats <- country_data %>%
+        summarise(
+          latest_year = max(Year),
+          latest_inflation = Inflation[Year == latest_year],
+          latest_foodshare = FoodShare[Year == latest_year],
+          avg_inflation_all = mean(Inflation, na.rm = TRUE),
+          avg_foodshare_all = mean(FoodShare, na.rm = TRUE),
+          min_year = min(Year),
+          max_year = max(Year)
+        )
+      
+      div(
+        h4(input$compareCountry),
+        div(style = "color: #666; font-size: 0.9em; margin-bottom: 15px;", 
+            paste("Data available from", stats$min_year, "to", stats$max_year)),
+        hr(),
+        h5("Latest Values:"),
+        div(style = "margin-bottom: 10px;",
+            span(class = "metric-title", paste("Inflation (", stats$latest_year, "): ")),
+            span(class = "metric-value", sprintf("%.1f%%", stats$latest_inflation))
+        ),
+        div(style = "margin-bottom: 15px;",
+            span(class = "metric-title", paste("Food Share (", stats$latest_year, "): ")),
+            span(class = "metric-value", sprintf("%.1f%%", stats$latest_foodshare))
+        ),
+        hr(),
+        
+        h5("All Years Average:"),
+        div(style = "margin-bottom: 10px;",
+            span(class = "metric-title", "Average Inflation: "),
+            span(class = "metric-value", sprintf("%.1f%%", stats$avg_inflation_all))
+        ),
+        div(style = "margin-bottom: 15px;",
+            span(class = "metric-title", "Average Food Share: "),
+            span(class = "metric-value", sprintf("%.1f%%", stats$avg_foodshare_all))
+        ),
+        hr(),
+        
+        div(style = "font-size: 0.8em; color: #999; margin-top: 10px;",
+            paste("Based on", nrow(country_data), "years of data"))
+      )
+    } else {
+      div(p("No data available for this country."))
+    }
+  })
+  
+  output$comparePlot <- renderPlot({
+    req(input$compareCountry)
+    df %>%
+      filter(Country == input$compareCountry) %>%
+      select(Year, Inflation, FoodShare) %>%
+      pivot_longer(
+        cols = c(Inflation, FoodShare),
+        names_to = "Metric",
+        values_to = "Value"
+      ) %>%
+      ggplot(aes(x = Year, y = Value, color = Metric)) +
+      geom_line(size = 1.2) +
+      facet_wrap(~ Metric, scales = "free_y", ncol = 1,
+                 labeller = as_labeller(c(
+                   Inflation = "Annual Inflation (%)",
+                   FoodShare = "Food spend % of total expenditure"
+                 ))) +
+      scale_color_viridis_d(name = "Metric") +
+      labs(
+        title = paste("Inflation vs Food Budget Share for", input$compareCountry),
+        x = NULL,
+        color = ""
+      ) +
+      theme_minimal(base_size = 14) +
+      theme(
+        legend.position = "none",
+        plot.title = element_text(face = "bold", size = 16),
+        strip.text = element_text(face = "bold", size = 12)
+      )
+  })
+}
+
+shinyApp(ui, server)

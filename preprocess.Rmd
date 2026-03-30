@@ -1,0 +1,40 @@
+```{r}
+library(tidyverse)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(countrycode)
+library(rmapshaper)
+cpi_raw <- read_csv("consumer-price-index.csv", show_col_types = FALSE)
+df_inf <- cpi_raw %>%
+  rename(
+    Country = Entity,
+    CPI     = `Consumer price index (2010 = 100)`
+  ) %>%
+  group_by(Country) %>%
+  arrange(Year) %>%
+  mutate(
+    Inflation = (CPI / lag(CPI) - 1) * 100
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(Inflation))
+df_food <- read_csv("share-of-consumer-expenditure-spent-on-food.csv",
+                    show_col_types = FALSE) %>%
+  rename(
+    Country   = Entity,
+    FoodShare = `Food as share of total consumer expenditure`
+  ) %>%
+  select(Country, Year, FoodShare)
+df <- inner_join(df_inf, df_food, by = c("Country", "Year")) %>%
+  mutate(
+    iso3 = countrycode(Country, "country.name", "iso3c")
+  ) %>%
+  filter(!is.na(iso3))
+world_sf <- ne_countries(scale = "medium", returnclass = "sf") %>%
+  select(iso_a3, name, geometry) %>%
+  ms_simplify(keep = 0.05, keep_shapes = TRUE)
+saveRDS(df, "data_prepped.rds")
+message("data_prepped.rds written")
+saveRDS(world_sf, "world_simp.rds")
+message("world_simp.rds written")
+```
