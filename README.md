@@ -4,7 +4,6 @@
 
 An interactive Shiny dashboard for Data Visualisation Assignment 3. The app explores how annual inflation and household food expenditure share vary across countries and over time using public data from Our World in Data.
 
----
 
 ## Table of Contents
 - [Problem](#problem)
@@ -19,13 +18,11 @@ An interactive Shiny dashboard for Data Visualisation Assignment 3. The app expl
 - [Data Source](#data-source)
 - [Author](#author)
 
----
 
 ## Problem
 
 Understanding inflation and household food expenditure patterns helps compare cost-of-living pressures across countries and time. This dashboard enables geographic and temporal exploration to support data-driven insights.
 
----
 
 ## Dataset
 
@@ -33,7 +30,6 @@ Understanding inflation and household food expenditure patterns helps compare co
 - **Metrics:** Annual inflation (derived from CPI) and food expenditure share
 - **Grain:** Country-year
 
----
 
 ## App Features
 
@@ -43,7 +39,6 @@ Understanding inflation and household food expenditure patterns helps compare co
 - Country profile with latest values and historical averages
 - Summary statistics for selected countries and year ranges
 
----
 
 ## Reproducible Pipeline
 
@@ -56,7 +51,6 @@ The preprocessing workflow in `preprocess.Rmd`:
 5. Downloads and simplifies world boundaries
 6. Saves analysis-ready objects as `data_prepped.rds` and `world_simp.rds`
 
----
 
 ## Project Structure
 
@@ -75,7 +69,6 @@ Assignment 3/
 
 Note: the folder is currently named `Shinny App` in this repository.
 
----
 
 ## Run Locally
 
@@ -96,7 +89,6 @@ install.packages(c(
 shiny::runApp("Shinny App")
 ```
 
----
 
 ## Deployment
 
@@ -119,13 +111,11 @@ rsconnect::setAccountInfo(
 rsconnect::deployApp(appDir = "Shinny App", appName = "Assignment-3")
 ```
 
----
 
 ## Live Demo
 
 - Main app: https://s4083242.shinyapps.io/Assignment-3/
 
----
 
 ## Tech Stack
 
@@ -141,7 +131,6 @@ rsconnect::deployApp(appDir = "Shinny App", appName = "Assignment-3")
 - rnaturalearthdata
 - rmapshaper
 
----
 
 ## Data Source
 
@@ -149,5 +138,3 @@ rsconnect::deployApp(appDir = "Shinny App", appName = "Assignment-3")
   https://ourworldindata.org/grapher/consumer-price-index
 - Food expenditure share (Our World in Data):
   https://ourworldindata.org/grapher/share-of-consumer-expenditure-spent-on-food
-
----
